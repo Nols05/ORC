@@ -1,20 +1,45 @@
-#define velSonido 0.0343
+#ifndef DEFINICIONES_H // solo importar si no está definido ya
+#define DEFINICIONES_H
 
-#define IN1 16
-#define IN2 17
-#define IN3 18
-#define IN4 19
-#define ENA 20
-#define ENB 21
+// Identificadores de modos/pruebas
+#define MODO_LINEA 1
+#define MODO_OBSTACULOS 2
+#define MODO_FUTBOL 3
 
-#define foto0 22
-#define foto1 23
+// Pines para el sensor siguelíneas de 8 fotodiodos
+#define foto0 32
+#define foto1 33
 #define foto2 25
 #define foto3 26
 #define foto4 27
-#define foto5 32
-#define foto6 33
-#define foto7 34
+#define foto5 14
+#define foto6 12
+#define foto7 13
 
-#define ECHO 13
-#define TRIG 15
+// Pines para el sensor de ultrasonidos
+#define TRIG 5
+#define ECHO 18
+
+// Constante para el cálculo de la distancia
+#define velSonido 0.0343 // Velocidad del sonido en cm/μs
+
+// Pines para los motores
+#define IN1 2
+#define IN2 4
+#define IN3 16
+#define IN4 17
+#define ENA 0
+#define ENB 15
+
+// Constantes para el algoritmo de PID
+#define KP 25          // Constante proporcional
+#define KD 15          // Constante derivativa
+#define BASE_SPEED 150 // Velocidad base del robot
+#define MAX_SPEED 255  // Velocidad máxima
+
+// Variables globales
+extern int modoActual;
+extern float distancia;
+extern int fotoDiodo[8];
+
+#endif
