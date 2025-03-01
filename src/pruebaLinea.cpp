@@ -7,6 +7,7 @@
 int posicion = 0;
 int error = 0;
 int errorAnterior = 0;
+int errorAcumulado = 0;
 int velocidadIzquierda = 0;
 int velocidadDerecha = 0;
 
@@ -15,8 +16,9 @@ void iniciarPruebaLinea()
     // Resetear variables de control
     error = 0;
     errorAnterior = 0;
+    errorAcumulado = 0;
 
-    // Inicialmente, el robot se mueve hacia adelante a velocidad base
+    // Iniciar con una velocidad moderada para mejor precisión
     adelante(BASE_SPEED);
     delay(100);
 }
@@ -25,32 +27,9 @@ void ejecutarPruebaLinea()
 {
     // Leer sensores
     leerFotodiodoLineas();
-    leerUltrasonidos();
-
-    // Comprobar si hay obstáculo
-    if (distancia < 15)
-    {
-        parar();
-        return;
-    }
 
     // Calcular posición de la línea
     posicion = calcularPosicion();
-
-    // Si se ha perdido completamente la línea
-    if (posicion == 9999)
-    {
-        // Estrategia de recuperación: girar hacia donde estaba la línea anteriormente
-        if (error > 0)
-        {
-            derecha(BASE_SPEED);
-        }
-        else
-        {
-            izquierda(BASE_SPEED);
-        }
-        return;
-    }
 
     // Calcular error (qué tan lejos está de la línea central)
     error = posicion;
@@ -58,12 +37,27 @@ void ejecutarPruebaLinea()
     // Calcular componente derivativa (cambio en el error)
     int errorDiferencial = error - errorAnterior;
 
-    // Calcular ajuste de velocidad usando PID (solo P y D en este caso)
-    int ajusteVelocidad = (KP * error / 100) + (KD * errorDiferencial / 100);
+    // Calcular componente integral con limitación
+    errorAcumulado += error;
+    errorAcumulado = constrain(errorAcumulado, -1500, 1500);
+
+    // Resetear acumulado en cambios grandes de dirección
+    if ((error > 0 && errorAnterior < 0) || (error < 0 && errorAnterior > 0))
+        errorAcumulado = 0;
+
+    // Calcular ajuste de velocidad con énfasis en el componente proporcional
+    int ajusteVelocidad = (KP * error / 100) + (KI * errorAcumulado / 100) + (KD * errorDiferencial / 100);
+
+    // Reducir velocidad base en curvas pronunciadas para mayor precisión
+    int velocidadBase = BASE_SPEED;
+    if (abs(error) > 2000)
+    {
+        velocidadBase = BASE_SPEED / 2;
+    }
 
     // Calcular velocidades para cada motor
-    velocidadIzquierda = BASE_SPEED - ajusteVelocidad;
-    velocidadDerecha = BASE_SPEED + ajusteVelocidad;
+    velocidadIzquierda = velocidadBase - ajusteVelocidad;
+    velocidadDerecha = velocidadBase + ajusteVelocidad;
 
     // Aplicar velocidades a los motores
     motores(velocidadIzquierda, velocidadDerecha);

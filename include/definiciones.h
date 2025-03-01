@@ -32,6 +32,7 @@
 #define ENB 15
 
 // Constantes para el algoritmo de PID
+#define KI 5           // Valor inicial sugerido, puede necesitar ajuste
 #define KP 25          // Constante proporcional
 #define KD 15          // Constante derivativa
 #define BASE_SPEED 150 // Velocidad base del robot

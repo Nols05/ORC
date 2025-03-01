@@ -1,25 +1,35 @@
-#include "definiciones.h"
 #include "sensores.h"
 #include "motores.h"
+#include "definiciones.h"
 #include <Arduino.h>
 
 // Estados para la máquina de estados
-enum EstadoObstaculos
+enum Estado
 {
     SEGUIR_LINEA,
-    DETECTAR_OBSTACULOS,
-    EVITAR_OBSTACULO,
-    BUSCAR_LINEA_ALTERNATIVA
+    BUSCAR_NUEVA_LINEA,
+    GIRAR_DERECHA,
+    GIRAR_IZQUIERDA
 };
 
-EstadoObstaculos estadoActual = SEGUIR_LINEA;
-unsigned long tiempoEvitando = 0;
-int lineaActual = 1; // 0, 1, 2 para las tres líneas
+// Variables para el control
+int posicion = 0;
+int error = 0;
+int errorAnterior = 0;
+int velocidadIzquierda = 0;
+int velocidadDerecha = 0;
+Estado estadoActual = SEGUIR_LINEA;
+unsigned long tiempoInicio = 0;
+bool direccionGiro = true; // true = derecha, false = izquierda
 
 void iniciarPruebaObstaculos()
 {
+    // Resetear variables de control
+    error = 0;
+    errorAnterior = 0;
     estadoActual = SEGUIR_LINEA;
-    lineaActual = 1;
+
+    // Iniciar movimiento
     adelante(BASE_SPEED);
     delay(100);
 }
@@ -30,81 +40,86 @@ void ejecutarPruebaObstaculos()
     leerFotodiodoLineas();
     leerUltrasonidos();
 
-    // Máquina de estados para la prueba de obstáculos
+    // Máquina de estados
     switch (estadoActual)
     {
+
     case SEGUIR_LINEA:
-        // Algoritmo similar al de seguimiento de línea
+        // Seguir la línea normalmente hasta encontrar un obstáculo
+        // Detectar obstáculo
+        if (distancia < 15)
         {
-            int posicion = calcularPosicion();
-            if (posicion != 9999)
+            // Encontró un obstáculo, cambiar a estado de búsqueda
+            parar();
+            delay(200);
+
+            // Alternar la dirección de giro cada vez que encuentra un obstáculo
+            direccionGiro = !direccionGiro;
+
+            // Retroceder un poco para tener espacio de maniobra
+            atras(BASE_SPEED);
+            delay(500);
+            parar();
+            delay(100);
+
+            if (direccionGiro)
             {
-                int error = posicion;
-                int ajusteVelocidad = KP * error / 100;
-                motores(BASE_SPEED - ajusteVelocidad, BASE_SPEED + ajusteVelocidad);
-            }
-
-            // Comprobar si hay obstáculo
-            if (distancia < 20)
-            {
-                estadoActual = DETECTAR_OBSTACULOS;
-            }
-        }
-        break;
-
-    case DETECTAR_OBSTACULOS:
-        // Verificar si realmente es un obstáculo que bloquea el camino
-        parar();
-        delay(100);
-        leerUltrasonidos();
-
-        if (distancia < 20)
-        {
-            // Confirmar obstáculo, decidir evitarlo
-            estadoActual = EVITAR_OBSTACULO;
-            tiempoEvitando = millis();
-        }
-        else
-        {
-            // Falsa alarma, volver a seguir la línea
-            estadoActual = SEGUIR_LINEA;
-        }
-        break;
-
-    case EVITAR_OBSTACULO:
-        // Maniobra para evitar el obstáculo
-        if (millis() - tiempoEvitando < 500)
-        {
-            // Retroceder un poco
-            atras(100);
-        }
-        else if (millis() - tiempoEvitando < 1000)
-        {
-            // Girar para buscar otra línea
-            if (lineaActual < 2)
-            {
-                // Buscar la siguiente línea a la derecha
-                derecha(150);
+                estadoActual = GIRAR_DERECHA;
             }
             else
             {
-                // Buscar línea a la izquierda si estamos en la última
-                izquierda(150);
+                estadoActual = GIRAR_IZQUIERDA;
             }
+
+            tiempoInicio = millis();
+            break;
         }
-        else
+
+        // Si no hay obstáculo, seguir la línea normalmente con PID
+        posicion = calcularPosicion();
+        error = posicion;
+        int errorDiferencial = error - errorAnterior;
+        int ajusteVelocidad = (KP * error / 100) + (KD * errorDiferencial / 100);
+
+        velocidadIzquierda = BASE_SPEED - ajusteVelocidad;
+        velocidadDerecha = BASE_SPEED + ajusteVelocidad;
+        motores(velocidadIzquierda, velocidadDerecha);
+
+        errorAnterior = error;
+        break;
+
+    case GIRAR_DERECHA:
+        // Girar a la derecha durante un tiempo
+        derecha(BASE_SPEED);
+
+        // Después de cierto tiempo, cambiar a estado de búsqueda
+        if (millis() - tiempoInicio > 800)
         {
-            // Cambiar a buscar línea alternativa
-            estadoActual = BUSCAR_LINEA_ALTERNATIVA;
-            adelante(100);
+            estadoActual = BUSCAR_NUEVA_LINEA;
+            adelante(BASE_SPEED);
+            tiempoInicio = millis();
         }
         break;
 
-    case BUSCAR_LINEA_ALTERNATIVA:
-        // Buscar una nueva línea
-        leerFotodiodoLineas();
+    case GIRAR_IZQUIERDA:
+        // Girar a la izquierda durante un tiempo
+        izquierda(BASE_SPEED);
 
-        // Verificar si se encontró una línea
+        // Después de cierto tiempo, cambiar a estado de búsqueda
+        if (millis() - tiempoInicio > 800)
+        {
+            estadoActual = BUSCAR_NUEVA_LINEA;
+            adelante(BASE_SPEED);
+            tiempoInicio = millis();
+        }
+        break;
+
+    case BUSCAR_NUEVA_LINEA:
+        // Avanzar buscando una nueva línea
+        adelante(BASE_SPEED);
+
+        // Verificar si encontró una línea
+        leerFotodiodoLineas();
         bool lineaEncontrada = false;
         for (int i = 0; i < 8; i++)
         {
@@ -115,30 +130,31 @@ void ejecutarPruebaObstaculos()
             }
         }
 
+        // Si encontró una línea, volver al seguimiento normal
         if (lineaEncontrada)
         {
-            // Actualizar línea actual y volver a seguirla
-            if (lineaActual < 2)
-            {
-                lineaActual++;
-            }
-            else
-            {
-                lineaActual = 0;
-            }
             estadoActual = SEGUIR_LINEA;
+            adelante(BASE_SPEED);
+            break;
         }
-        else
+
+        // Si ha pasado demasiado tiempo sin encontrar línea, girar en dirección contraria
+        if (millis() - tiempoInicio > 2000)
         {
-            // Seguir buscando, movimiento en forma de arco
-            if (lineaActual < 2)
+            parar();
+            delay(100);
+            direccionGiro = !direccionGiro;
+
+            if (direccionGiro)
             {
-                motores(80, 150); // Giro derecha suave
+                estadoActual = GIRAR_DERECHA;
             }
             else
             {
-                motores(150, 80); // Giro izquierda suave
+                estadoActual = GIRAR_IZQUIERDA;
             }
+
+            tiempoInicio = millis();
         }
         break;
     }
